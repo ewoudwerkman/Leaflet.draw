@@ -94,11 +94,18 @@ L.Draw.Feature = L.Handler.extend({
 		this._map.fire(L.Draw.Event.CREATED, {layer: layer, layerType: this.type});
 	},
 
+	// @method stopDrawing(): void
+	// Stops drawing the Feature and fires a message. Used for both pressing the ESC key, as clicking 'cancel'
+	stopDrawing: function () {
+		this._map.fire('draw:stopdrawing');
+		this.disable();
+	},
+	
 	// Cancel drawing when the escape key is pressed
 	_cancelDrawing: function (e) {
 		if (e.keyCode === 27) {
 			this._map.fire('draw:canceled', {layerType: this.type});
-			this.disable();
+			this.stopDrawing();
 		}
 	}
 });
