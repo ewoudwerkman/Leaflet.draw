@@ -1,5 +1,5 @@
 /*
- Leaflet.draw 1.0.5+3e73f69, a plugin that adds drawing and editing tools to Leaflet powered maps.
+ Leaflet.draw 1.0.6+db2f3ee, a plugin that adds drawing and editing tools to Leaflet powered maps.
  (c) 2012-2017, Jacob Toye, Jon West, Smartrak, Leaflet
 
  https://github.com/Leaflet/Leaflet.draw
@@ -8,7 +8,7 @@
 (function (window, document, undefined) {/**
  * Leaflet.draw assumes that you have already included the Leaflet library.
  */
-L.drawVersion = "1.0.5+3e73f69";
+L.drawVersion = "1.0.6+db2f3ee";
 /**
  * @class L.Draw
  * @aka Draw
@@ -1789,8 +1789,24 @@ L.Edit = L.Edit || {};
  * @aka Edit.Poly
  */
 L.Edit.Poly = L.Handler.extend({
+
+	options: {
+		moveIcon: new L.DivIcon({
+			iconSize: new L.Point(8, 8),
+			className: 'leaflet-div-icon leaflet-editing-icon leaflet-edit-move'
+		}),
+		touchMoveIcon: new L.DivIcon({
+			iconSize: new L.Point(20, 20),
+			className: 'leaflet-div-icon leaflet-editing-icon leaflet-edit-move leaflet-touch-icon'
+		})
+	},
+
 	// @method initialize(): void
 	initialize: function (poly) {
+
+		if (L.Browser.touch) {
+			this.options.moveIcon = this.options.touchMoveIcon;
+		}
 
 		this.latlngs = [poly._latlngs];
 		if (poly._holes) {
@@ -1805,10 +1821,10 @@ L.Edit.Poly = L.Handler.extend({
 	// Compatibility method to normalize Poly* objects
 	// between 0.7.x and 1.0+
 	_defaultShape: function () {
-		if (!L.Polyline._flat) {
+		if (!L.LineUtil.isFlat) {
 			return this._poly._latlngs;
 		}
-		return L.Polyline._flat(this._poly._latlngs) ? this._poly._latlngs : this._poly._latlngs[0];
+		return L.LineUtil.isFlat(this._poly._latlngs) ? this._poly._latlngs : this._poly._latlngs[0];
 	},
 
 	_eachVertexHandler: function (callback) {
@@ -1824,6 +1840,10 @@ L.Edit.Poly = L.Handler.extend({
 		this._eachVertexHandler(function (handler) {
 			handler.addHooks();
 		});
+
+		if (this._poly.options.movable) {
+			this._initMarkers();
+		}
 	},
 
 	// @method removeHooks(): void
@@ -1832,6 +1852,10 @@ L.Edit.Poly = L.Handler.extend({
 		this._eachVertexHandler(function (handler) {
 			handler.removeHooks();
 		});
+
+		if (this._poly.options.movable) {
+			this._releaseMarkers();
+		}
 	},
 
 	// @method updateMarkers(): void
@@ -1854,8 +1878,171 @@ L.Edit.Poly = L.Handler.extend({
 		if (e.layer._holes) {
 			this.latlngs = this.latlngs.concat(e.layer._holes);
 		}
-	}
+	},
 
+	_initMarkers: function() {
+		this._poly.on('edit', this._onEdit, this);
+		
+		if (this._poly._map) {
+			this._map = this._poly._map;
+
+			var coords = this._defaultShape();
+			if (coords.length > 3) {
+				// somehow, the first and the last coordinate are pointing to the same point object (probably more efficient)
+				// and then the _move function doesn't work. This patch make sure this doesn't happen
+				var first = coords[0];
+				var last = coords[coords.length-1];
+				if (first === last && first.lat == last.lat && first.lng == last.lng) {
+					coords[coords.length-1] = {lat:last.lat, lng:last.lng};
+				}
+			}
+			
+
+			if (!this._markerGroup) {
+				this._markerGroup = new L.LayerGroup();
+				this._map.addLayer(this._markerGroup);
+			}
+
+			if (!this._moveMarker) {
+
+				var latlng = this._getMoveMarkerLatLng();
+
+				this._moveMarker = new L.Marker.Touch(latlng, {
+					draggable: true,
+					icon: this.options.moveIcon,
+					zIndexOffset: 10
+				});
+				this._moveMarker._origLatLng = latlng;
+
+				this._moveMarker
+					.on('dragstart', this._onMarkerDragStart, this)
+					.on('drag', this._onMarkerDrag, this)
+					.on('dragend', this._onMarkerDragEnd, this)
+					.on('touchstart', this._onTouchStart, this)
+					.on('touchmove', this._onTouchMove, this)
+					.on('MSPointerMove', this._onTouchMove, this)
+					.on('touchend', this._onTouchEnd, this)
+					.on('MSPointerUp', this._onTouchEnd, this);
+
+				this._markerGroup.addLayer(this._moveMarker);
+			}
+		}
+	},
+
+	_releaseMarkers: function () {
+		this._moveMarker
+			.off('dragstart', this._onMarkerDragStart, this)
+			.off('drag', this._onMarkerDrag, this)
+			.off('dragend', this._onMarkerDragEnd, this)
+			.off('touchstart', this._onTouchStart, this)
+			.off('touchmove', this._onTouchMove, this)
+			.off('MSPointerMove', this._onTouchMove, this)
+			.off('touchend', this._onTouchEnd, this)
+			.off('MSPointerUp', this._onTouchEnd, this);
+
+		this._markerGroup.removeLayer(this._moveMarker);
+		delete this._moveMarker;
+
+		this._map.removeLayer(this._markerGroup);
+		delete this._markerGroup;
+
+		delete this._map;
+
+		this._poly.off('edit', this._onEdit, this);
+	},
+
+	_fireEdit: function () {
+		this._poly.edited = true;
+		this._poly.fire('edit');
+	},
+
+	_onEdit: function (e) {
+		if (this._moveMarker) {			
+			var latlng = this._getMoveMarkerLatLng();
+
+			this._moveMarker.setLatLng(latlng);
+			this._moveMarker._origLatLng = latlng;
+		}
+	},
+
+	_onMarkerDragStart: function (e) {
+		var marker = e.target;
+		marker.setOpacity(0);
+
+		this._poly.fire('editstart');
+		
+	},
+
+	_onMarkerDrag: function (e) {
+		var marker = e.target,
+			latlng = marker.getLatLng();
+
+		this._move(latlng);
+		
+		this._poly.fire('editdrag');
+	},
+
+	_onMarkerDragEnd: function (e) {
+		var marker = e.target;
+		marker.setOpacity(1);
+	
+		this._fireEdit();
+	},
+
+	_onTouchStart: function (e) {
+		var marker = e.target;
+		marker.setOpacity(0);
+
+		this._poly.fire('editstart');
+	},
+
+	_onTouchMove: function (e) {
+		var layerPoint = this._map.mouseEventToLayerPoint(e.originalEvent.touches[0]),
+			latlng = this._map.layerPointToLatLng(layerPoint);
+
+		this._move(latlng);
+
+		return false;
+	},
+
+	_onTouchEnd: function (e) {
+		var marker = e.target;
+		marker.setOpacity(1);
+
+		this._fireEdit();
+	},
+
+	_move: function (latlng) {
+		var moveMarker = this._moveMarker;
+
+		var latlngs = this._defaultShape();
+
+		var latMove = latlng.lat - moveMarker._origLatLng.lat;
+		var lngMove = latlng.lng - moveMarker._origLatLng.lng;
+
+		for (var i = 0; i < latlngs.length; ++i) {
+			latlngs[i].lat += latMove;
+			latlngs[i].lng += lngMove;
+		}
+
+		moveMarker.setLatLng(latlng);
+		moveMarker._origLatLng = latlng;
+
+		this._poly.redraw();
+		this.updateMarkers();
+
+		this._map.fire(L.Draw.Event.EDITMOVE, {layer: this._poly});
+	},
+
+	_getMoveMarkerLatLng: function () {
+
+		var latlngs = this._defaultShape();
+
+		var p1 = this._map.project(latlngs[0]);
+		var p2 = this._map.project(latlngs[1]);
+
+		return this._map.unproject(p1._multiplyBy(0.75)._add(p2._multiplyBy(0.25)));
+	}
 });
 
 /**
@@ -1900,10 +2087,10 @@ L.Edit.PolyVerticesEdit = L.Handler.extend({
 	// Compatibility method to normalize Poly* objects
 	// between 0.7.x and 1.0+
 	_defaultShape: function () {
-		if (!L.Polyline._flat) {
+		if (!L.LineUtil.isFlat) {
 			return this._latlngs;
 		}
-		return L.Polyline._flat(this._latlngs) ? this._latlngs : this._latlngs[0];
+		return L.LineUtil.isFlat(this._latlngs) ? this._latlngs : this._latlngs[0];
 	},
 
 	// @method addHooks(): void
@@ -4139,7 +4326,8 @@ L.EditToolbar = L.Toolbar.extend({
 
 				// Whether to user the existing layers color
 				maintainColor: false
-			}
+			},
+			movable: false	// only L.Edit.Poly
 		},
 		remove: {},
 		poly: null,
@@ -4180,7 +4368,8 @@ L.EditToolbar = L.Toolbar.extend({
 				handler: new L.EditToolbar.Edit(map, {
 					featureGroup: featureGroup,
 					selectedPathOptions: this.options.edit.selectedPathOptions,
-					poly: this.options.poly
+					poly: this.options.poly,
+					movable: this.options.edit.movable
 				}),
 				title: L.drawLocal.edit.toolbar.buttons.edit
 			},
@@ -4528,6 +4717,11 @@ L.EditToolbar.Edit = L.Handler.extend({
 			layer.options.original = L.extend({}, layer.options);
 			layer.options.editing = pathOptions;
 
+		}
+
+		// Set movable option for editing mode
+		if (this.options.movable) {
+			layer.options.movable = this.options.movable;
 		}
 
 		if (layer instanceof L.Marker) {

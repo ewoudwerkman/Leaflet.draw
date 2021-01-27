@@ -38,10 +38,10 @@ L.Edit.Poly = L.Handler.extend({
 	// Compatibility method to normalize Poly* objects
 	// between 0.7.x and 1.0+
 	_defaultShape: function () {
-		if (!L.Polyline._flat) {
+		if (!L.LineUtil.isFlat) {
 			return this._poly._latlngs;
 		}
-		return L.Polyline._flat(this._poly._latlngs) ? this._poly._latlngs : this._poly._latlngs[0];
+		return L.LineUtil.isFlat(this._poly._latlngs) ? this._poly._latlngs : this._poly._latlngs[0];
 	},
 
 	_eachVertexHandler: function (callback) {
@@ -99,9 +99,21 @@ L.Edit.Poly = L.Handler.extend({
 
 	_initMarkers: function() {
 		this._poly.on('edit', this._onEdit, this);
-
+		
 		if (this._poly._map) {
 			this._map = this._poly._map;
+
+			var coords = this._defaultShape();
+			if (coords.length > 3) {
+				// somehow, the first and the last coordinate are pointing to the same point object (probably more efficient)
+				// and then the _move function doesn't work. This patch make sure this doesn't happen
+				var first = coords[0];
+				var last = coords[coords.length-1];
+				if (first === last && first.lat == last.lat && first.lng == last.lng) {
+					coords[coords.length-1] = {lat:last.lat, lng:last.lng};
+				}
+			}
+			
 
 			if (!this._markerGroup) {
 				this._markerGroup = new L.LayerGroup();
@@ -162,7 +174,7 @@ L.Edit.Poly = L.Handler.extend({
 	},
 
 	_onEdit: function (e) {
-		if (this._moveMarker) {
+		if (this._moveMarker) {			
 			var latlng = this._getMoveMarkerLatLng();
 
 			this._moveMarker.setLatLng(latlng);
@@ -175,6 +187,7 @@ L.Edit.Poly = L.Handler.extend({
 		marker.setOpacity(0);
 
 		this._poly.fire('editstart');
+		
 	},
 
 	_onMarkerDrag: function (e) {
@@ -182,14 +195,14 @@ L.Edit.Poly = L.Handler.extend({
 			latlng = marker.getLatLng();
 
 		this._move(latlng);
-
+		
 		this._poly.fire('editdrag');
 	},
 
 	_onMarkerDragEnd: function (e) {
 		var marker = e.target;
 		marker.setOpacity(1);
-
+	
 		this._fireEdit();
 	},
 
@@ -291,10 +304,10 @@ L.Edit.PolyVerticesEdit = L.Handler.extend({
 	// Compatibility method to normalize Poly* objects
 	// between 0.7.x and 1.0+
 	_defaultShape: function () {
-		if (!L.Polyline._flat) {
+		if (!L.LineUtil.isFlat) {
 			return this._latlngs;
 		}
-		return L.Polyline._flat(this._latlngs) ? this._latlngs : this._latlngs[0];
+		return L.LineUtil.isFlat(this._latlngs) ? this._latlngs : this._latlngs[0];
 	},
 
 	// @method addHooks(): void
