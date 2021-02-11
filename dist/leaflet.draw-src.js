@@ -1,5 +1,5 @@
 /*
- Leaflet.draw 1.0.6+db2f3ee, a plugin that adds drawing and editing tools to Leaflet powered maps.
+ Leaflet.draw 1.0.6+bbde6a2, a plugin that adds drawing and editing tools to Leaflet powered maps.
  (c) 2012-2017, Jacob Toye, Jon West, Smartrak, Leaflet
 
  https://github.com/Leaflet/Leaflet.draw
@@ -8,7 +8,7 @@
 (function (window, document, undefined) {/**
  * Leaflet.draw assumes that you have already included the Leaflet library.
  */
-L.drawVersion = "1.0.6+db2f3ee";
+L.drawVersion = "1.0.6+bbde6a2";
 /**
  * @class L.Draw
  * @aka Draw
@@ -472,11 +472,18 @@ L.Draw.Feature = L.Handler.extend({
 		this._map.fire(L.Draw.Event.CREATED, {layer: layer, layerType: this.type});
 	},
 
+	// @method stopDrawing(): void
+	// Stops drawing the Feature and fires a message. Used for both pressing the ESC key, as clicking 'cancel'
+	stopDrawing: function () {
+		this._map.fire('draw:stopdrawing');
+		this.disable();
+	},
+	
 	// Cancel drawing when the escape key is pressed
 	_cancelDrawing: function (e) {
 		if (e.keyCode === 27) {
 			this._map.fire('draw:canceled', {layerType: this.type});
-			this.disable();
+			this.stopDrawing();
 		}
 	}
 });
@@ -524,7 +531,8 @@ L.Draw.Polyline = L.Draw.Feature.extend({
 		feet: true, // When not metric, to use feet instead of yards for display.
 		nautic: false, // When not metric, not feet use nautic mile for display
 		showLength: true, // Whether to display distance in the tooltip
-		zIndexOffset: 2000, // This should be > than the highest z-index any map layers
+		zIndexOffset: 2000, // This should be > than the highest z-index any map layers, but for connecting to markers we use -2000
+		zIndexOffset2: 0, // This makes sure the mouseover on a handle shows the correct mousepointer
 		factor: 1, // To change distance calculation
 		maxPoints: 0 // Once this number of points are placed, finish shape
 	},
@@ -574,10 +582,12 @@ L.Draw.Polyline = L.Draw.Feature.extend({
 					icon: L.divIcon({
 						className: 'leaflet-mouse-marker',
 						iconAnchor: [20, 20],
-						iconSize: [40, 40]
+						iconSize: [40, 40],
+						bubblingMouseEvents: true
 					}),
 					opacity: 0,
-					zIndexOffset: this.options.zIndexOffset
+					zIndexOffset: this.options.zIndexOffset,
+					bubblingMouseEvents: true
 				});
 			}
 
@@ -865,7 +875,7 @@ L.Draw.Polyline = L.Draw.Feature.extend({
 	_createMarker: function (latlng) {
 		var marker = new L.Marker(latlng, {
 			icon: this.options.icon,
-			zIndexOffset: this.options.zIndexOffset * 2
+			zIndexOffset: this.options.zIndexOffset2 * 2
 		});
 
 		this._markerGroup.addLayer(marker);
@@ -4282,7 +4292,7 @@ L.DrawToolbar = L.Toolbar.extend({
 			{
 				title: L.drawLocal.draw.toolbar.actions.title,
 				text: L.drawLocal.draw.toolbar.actions.text,
-				callback: this.disable,
+				callback: handler.stopDrawing,
 				context: this
 			}
 		];

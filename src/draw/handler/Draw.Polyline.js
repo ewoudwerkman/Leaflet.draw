@@ -39,7 +39,8 @@ L.Draw.Polyline = L.Draw.Feature.extend({
 		feet: true, // When not metric, to use feet instead of yards for display.
 		nautic: false, // When not metric, not feet use nautic mile for display
 		showLength: true, // Whether to display distance in the tooltip
-		zIndexOffset: 2000, // This should be > than the highest z-index any map layers
+		zIndexOffset: 2000, // This should be > than the highest z-index any map layers, but for connecting to markers we use -2000
+		zIndexOffset2: 0, // This makes sure the mouseover on a handle shows the correct mousepointer
 		factor: 1, // To change distance calculation
 		maxPoints: 0 // Once this number of points are placed, finish shape
 	},
@@ -89,10 +90,12 @@ L.Draw.Polyline = L.Draw.Feature.extend({
 					icon: L.divIcon({
 						className: 'leaflet-mouse-marker',
 						iconAnchor: [20, 20],
-						iconSize: [40, 40]
+						iconSize: [40, 40],
+						bubblingMouseEvents: true
 					}),
 					opacity: 0,
-					zIndexOffset: this.options.zIndexOffset
+					zIndexOffset: this.options.zIndexOffset,
+					bubblingMouseEvents: true
 				});
 			}
 
@@ -380,7 +383,7 @@ L.Draw.Polyline = L.Draw.Feature.extend({
 	_createMarker: function (latlng) {
 		var marker = new L.Marker(latlng, {
 			icon: this.options.icon,
-			zIndexOffset: this.options.zIndexOffset * 2
+			zIndexOffset: this.options.zIndexOffset2 * 2
 		});
 
 		this._markerGroup.addLayer(marker);
